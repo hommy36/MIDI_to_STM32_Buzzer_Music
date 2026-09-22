@@ -1,0 +1,103 @@
+# MIDI Buzzer Studio
+
+把 MIDI 文件自动转换为 STM32 无源蜂鸣器音乐代码的桌面软件（Tauri v2 + React）。
+
+复音 MIDI **手动选轨**（可多选合并为单音旋律），一键生成**全 STM32 家族可移植**的 C 代码。
+
+## 功能
+
+- **MIDI 解析**：轨名、通道、乐器（GM 音色表）、音符数、音域、初始 BPM、总时长
+- **手动选轨**：勾选任意轨道合并；和弦/重叠音按「最高音 / 最低音」策略单音化
+- **轨道试听**：每轨一个 ▶ 按钮，方波音色（与蜂鸣器一致）播放该轨原始内容，便于挑轨
+- **结果试听**：「试听合并结果」按当前参数（选轨、移调、倍速、音量）完整走一遍转换管线再播放，听到的就是蜂鸣器最终效果
+- **tempo 变化**：完整解析 SetTempo 事件，时值按 tempo map 精确换算为毫秒
+- **参数调节**：曲名（C 标识符）、半音移调（±24）、倍速（0.25x~4x）、主音量、音符间隔
+- **力度→音量**：MIDI velocity 逐音符映射为 PWM 占空比音量
+- **代码预览与导出**：生成 `<曲名>.c/.h` + 通用播放器 `buzzer_player.c/.h`
+
+## 生成的代码
+
+**不绑定具体定时器**：定时器句柄、通道、计数时钟全部运行时传入，仅使用 HAL 通用宏
+（`__HAL_TIM_SET_AUTORELOAD` / `__HAL_TIM_SET_COMPARE`），适用于 F0/F1/F4/F7/G0/G4/H7 全家族。
+
+```c
+// buzzer_player.h —— 通用播放器（跨工程复用，导出一次即可）
+typedef struct { float frequency; uint32_t duration_ms; uint8_t volume; } BuzzerNote_t;
+typedef struct { TIM_HandleTypeDef *htim; uint32_t channel; uint32_t timer_clock_hz; } BuzzerPlayer_t;
+void BuzzerPlayer_Init(BuzzerPlayer_t *p, TIM_HandleTypeDef *htim, uint32_t channel, uint32_t timer_clock_hz);
+void BuzzerPlayer_Play(BuzzerPlayer_t *p, const BuzzerNote_t *notes, uint32_t count, uint8_t master_volume, uint32_t gap_ms);
+void BuzzerPlayer_Stop(BuzzerPlayer_t *p);
+```
+
+曲谱文件是纯数据表 + 一行包装：
+
+```c
+static const BuzzerNote_t song_notes[] = {
+    {   523.251f,   500u,  79u }, /* C5 */
+    {     0.000f,   400u,   0u }, /* REST */
+};
+void Play_SampleSong(BuzzerPlayer_t *player) { ... }
+```
+
+## 固件集成（以任意 STM32CubeMX 工程为例）
+
+1. CubeMX 中把某个定时器通道配为 **PWM Generation**，PSC 分频到合适的计数时钟（建议 1MHz）
+2. 把导出的 `buzzer_player.c/.h` 和 `<曲名>.c/.h` 加入工程（`.c` 加入编译，`.h` 目录加入包含路径）
+3. 在 `main.c`：
+
+```c
+#include "buzzer_player.h"
+#include "SampleSong.h"
+
+BuzzerPlayer_t buzzer;
+BuzzerPlayer_Init(&buzzer, &htim3, TIM_CHANNEL_1, 1000000);  // 按你的工程改
+while (1) Play_SampleSong(&buzzer);
+```
+
+对 `reference/` 里的示例工程（STM32H723，TIM12_CH2/PB15，1MHz）则为
+`BuzzerPlayer_Init(&buzzer, &htim12, TIM_CHANNEL_2, 1000000);`
+
+细节说明：
+
+- `volume` = 0~100，占空比 = 50% × volume%；休止符频率为 0
+- 延时默认 `HAL_Delay`；RTOS 用户在包含 `buzzer_player.c` 前定义
+  `#define BUZZER_DELAY_MS(ms) osDelay(ms)` 即可
+- ARR 运行时按 `timer_clock_hz / frequency` 计算并钳制到 [2, 65535]，兼容纯 16 位定时器
+- 本软件**不做蜂鸣器音域约束**——不同蜂鸣器有效音域各异，是什么音就生成什么音，
+  音不合适请用「移调」自行调整
+
+## 开发与构建
+
+```bash
+npm install
+npm run tauri dev      # 开发模式
+npm run tauri build    # 打包安装包
+```
+
+后端核心（可独立测试，不依赖 Tauri）：
+
+```bash
+cd src-tauri
+cargo test -p midi-buzzer-core                    # 单元测试
+cargo run -p midi-buzzer-core --example make_sample  # 生成测试 MIDI
+cargo run -p midi-buzzer-core --example gen_demo     # 命令行端到端转换演示
+```
+
+## 目录结构
+
+```
+├── src/                    # React 前端（选轨 / 试听 / 参数 / 代码预览）
+│   └── audio.ts            # WebAudio 方波试听
+├── src-tauri/              # Tauri 应用壳（5 个 IPC 命令）
+│   └── core/               # midi-buzzer-core：纯 Rust 转换核心
+│       ├── src/midi.rs     #   解析、tempo map、单音化、力度→音量
+│       ├── src/codegen.rs  #   C 代码生成
+│       └── src/player_template.rs  # buzzer_player.c/.h 模板
+├── reference/              # 参考工程（手工曲谱版 STM32 蜂鸣器工程，仅作对照）
+└── scripts/gen-icon.cjs    # 应用图标生成
+```
+
+## 已知限制
+
+- 不支持 format 2 与 SMPTE 时间格式的 MIDI（极少见，会明确报错）
+- 播放是阻塞式的（`HAL_Delay` 循环），需要与非阻塞逻辑共存时请自行改用定时器中断/RTOS 任务驱动播放器
