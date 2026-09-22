@@ -8,7 +8,7 @@
 ## 由来
 
 本工程脱胎于 [stm32-buzzer-music-Haruhikage-CRYCHIC](https://github.com/hommy36/stm32-buzzer-music-Haruhikage-CRYCHIC)：
-当时想让 STM32 蜂鸣器演奏《春日影》，是对着谱子一个音一个音手敲成 C 数组的——音高查表、
+当时想让妙板上的蜂鸣器演奏《春日影》，是靠对着谱子一个音一个音手敲成代码的——音高查表、
 时值换算、休止符对齐全靠自己算，一首曲子敲下来非常繁琐。
 
 为了不再受这个罪，用 AI 辅助做了这个软件：拖进去一个 MIDI 文件，选轨、试听、
