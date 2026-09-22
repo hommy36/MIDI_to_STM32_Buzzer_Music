@@ -4,6 +4,15 @@
 
 复音 MIDI **手动选轨**（可多选合并为单音旋律），一键生成**全 STM32 家族可移植**的 C 代码。
 
+## 由来
+
+本工程脱胎于 [stm32-buzzer-music-Haruhikage-CRYCHIC](https://github.com/hommy36/stm32-buzzer-music-Haruhikage-CRYCHIC)：
+当时想让 STM32 蜂鸣器演奏《春日影》，是对着谱子一个音一个音手敲成 C 数组的——音高查表、
+时值换算、休止符对齐全靠自己算，一首曲子敲下来非常繁琐。
+
+为了不再受这个罪，用 AI 辅助做了这个软件：拖进去一个 MIDI 文件，选轨、试听、
+一键生成可直接编译进任何 STM32 工程的蜂鸣器代码。
+
 ## 功能
 
 - **MIDI 解析**：轨名、通道、乐器（GM 音色表）、音符数、音域、初始 BPM、总时长
@@ -54,7 +63,7 @@ BuzzerPlayer_Init(&buzzer, &htim3, TIM_CHANNEL_1, 1000000);  // 按你的工程�
 while (1) Play_SampleSong(&buzzer);
 ```
 
-对手工曲谱版参考工程 [stm32-buzzer-music-Haruhikage-CRYCHIC](https://github.com/hommy36/stm32-buzzer-music-Haruhikage-CRYCHIC)
+对《春日影》工程 [stm32-buzzer-music-Haruhikage-CRYCHIC](https://github.com/hommy36/stm32-buzzer-music-Haruhikage-CRYCHIC)
 （STM32H723，TIM12_CH2/PB15，1MHz）则为
 `BuzzerPlayer_Init(&buzzer, &htim12, TIM_CHANNEL_2, 1000000);`
 
@@ -101,9 +110,6 @@ cargo run -p midi-buzzer-core --example gen_demo     # 命令行端到端转换�
 ├── midi/                 # 示例 MIDI 文件
 └── scripts/gen-icon.cjs  # 应用图标生成
 ```
-
-参考工程（手工曲谱对照版）在独立仓库：
-[stm32-buzzer-music-Haruhikage-CRYCHIC](https://github.com/hommy36/stm32-buzzer-music-Haruhikage-CRYCHIC)
 
 ## 已知限制
 
