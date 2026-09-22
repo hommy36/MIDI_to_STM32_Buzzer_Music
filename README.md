@@ -1,8 +1,9 @@
 # MIDI Buzzer Studio
 
-把 MIDI 文件自动转换为 STM32 无源蜂鸣器音乐代码的桌面软件（Tauri v2 + React）。
+把 MIDI 文件（或**音频文件**）自动转换为 STM32 无源蜂鸣器音乐代码的桌面软件（Tauri v2 + React）。
 
 复音 MIDI **手动选轨**（可多选合并为单音旋律），一键生成**全 STM32 家族可移植**的 C 代码。
+也可以直接拖入 mp3/wav/flac/ogg/m4a，内置 AI 模型（Spotify basic-pitch，本地推理）自动识别成 MIDI 后再走同一套流程。
 
 ## 由来
 
@@ -15,6 +16,11 @@
 
 ## 功能
 
+- **音频转 MIDI（AI 识别）**：mp3 / wav / flac / ogg / m4a → MIDI。使用 Spotify
+  [basic-pitch](https://github.com/spotify/basic-pitch)（Apache-2.0）ONNX 模型，
+  纯 Rust 推理（[tract](https://github.com/sonos/tract) 运行时，无外部 dll），
+  音符提取算法与官方 Python 实现逐行对齐并有对齐测试。
+  模型仅 230KB，首次使用自动下载到应用数据目录（遵循 `HTTPS_PROXY` 环境变量与系统代理设置，不写死任何代理）
 - **MIDI 解析**：轨名、通道、乐器（GM 音色表）、音符数、音域、初始 BPM、总时长
 - **手动选轨**：勾选任意轨道合并；和弦/重叠音按「最高音 / 最低音」策略单音化
 - **轨道试听**：每轨一个 ▶ 按钮，方波音色（与蜂鸣器一致）播放该轨原始内容，便于挑轨
@@ -101,10 +107,13 @@ cargo run -p midi-buzzer-core --example gen_demo     # 命令行端到端转换�
 ```
 ├── src/                    # React 前端（选轨 / 试听 / 参数 / 代码预览）
 │   └── audio.ts            # WebAudio 方波试听
-├── src-tauri/              # Tauri 应用壳（5 个 IPC 命令）
+├── src-tauri/              # Tauri 应用壳（6 个 IPC 命令，含模型下载/代理探测）
 │   └── core/               # midi-buzzer-core：纯 Rust 转换核心
 │       ├── src/midi.rs     #   解析、tempo map、单音化、力度→音量
 │       ├── src/codegen.rs  #   C 代码生成
+│       ├── src/audio.rs    #   音频解码（symphonia）+ 重采样（rubato）
+│       ├── src/basic_pitch.rs  # basic-pitch 推理（tract）+ 音符提取
+│       ├── src/midi_write.rs   # 音符事件 → SMF 字节
 │       └── src/player_template.rs  # buzzer_player.c/.h 模板
 ├── firmware/SeeYouAgain-Test/  # 生成代码的 STM32H723 测试工程（可直接编译烧录）
 ├── midi/                 # 示例 MIDI 文件
@@ -114,4 +123,5 @@ cargo run -p midi-buzzer-core --example gen_demo     # 命令行端到端转换�
 ## 已知限制
 
 - 不支持 format 2 与 SMPTE 时间格式的 MIDI（极少见，会明确报错）
+- AI 音频识别对带伴奏歌曲以主旋律提取为主，鼓点/贝斯可能产生杂音——用「和弦取音」策略与选轨试听把关
 - 播放是阻塞式的（`HAL_Delay` 循环），需要与非阻塞逻辑共存时请自行改用定时器中断/RTOS 任务驱动播放器

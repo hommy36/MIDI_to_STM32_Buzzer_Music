@@ -47,6 +47,11 @@ export interface PreviewNote {
   volume: number;
 }
 
+export interface AudioProgress {
+  stage: string;
+  percent: number;
+}
+
 const NOTE_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
 
 export function noteName(key: number): string {

@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
+import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
-import { FormState, Generated, MidiAnalysis, PreviewNote, formatDuration } from "./types";
+import { AudioProgress, FormState, Generated, MidiAnalysis, PreviewNote, formatDuration } from "./types";
 import { playNotes } from "./audio";
 import TrackList from "./components/TrackList";
 import OptionsForm from "./components/OptionsForm";
@@ -11,8 +12,13 @@ import CodePreview from "./components/CodePreview";
 
 const appWindow = getCurrentWindow();
 
+const MIDI_EXTS = ["mid", "midi"];
+const AUDIO_EXTS = ["mp3", "wav", "flac", "ogg", "m4a", "aac"];
+const AUDIO_RE = new RegExp(`\\.(${AUDIO_EXTS.join("|")})$`, "i");
+
 export default function App() {
   const [filePath, setFilePath] = useState<string | null>(null);
+  const [displayPath, setDisplayPath] = useState<string | null>(null);
   const [analysis, setAnalysis] = useState<MidiAnalysis | null>(null);
   const [selected, setSelected] = useState<number[]>([]);
   const [theme, setTheme] = useState(
@@ -30,6 +36,8 @@ export default function App() {
   const [generated, setGenerated] = useState<Generated | null>(null);
   const [exported, setExported] = useState<string[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [audioProgress, setAudioProgress] = useState<AudioProgress | null>(null);
   const [busy, setBusy] = useState(false);
   const [playing, setPlaying] = useState<string | null>(null);
   const stopRef = useRef<(() => void) | null>(null);
@@ -58,9 +66,10 @@ export default function App() {
     []
   );
 
-  const analyze = useCallback(async (path: string) => {
+  const analyze = useCallback(async (path: string, display?: string) => {
     setBusy(true);
     setError(null);
+    setNotice(null);
     setGenerated(null);
     setExported(null);
     stopPlayback();
@@ -68,6 +77,7 @@ export default function App() {
       const a = await invoke<MidiAnalysis>("analyze_midi", { path });
       setAnalysis(a);
       setFilePath(path);
+      setDisplayPath(display ?? path);
       let best = -1;
       let bestCount = 0;
       for (const t of a.tracks) {
@@ -77,16 +87,50 @@ export default function App() {
         }
       }
       setSelected(best >= 0 ? [best] : []);
-      const base = path.split(/[\\/]/).pop() ?? "Song";
+      const base = (display ?? path).split(/[\\/]/).pop() ?? "Song";
       setForm((f) => ({ ...f, songName: base.replace(/\.[^.]+$/, "") || "Song" }));
     } catch (e) {
       setError(String(e));
       setAnalysis(null);
       setFilePath(null);
+      setDisplayPath(null);
     } finally {
       setBusy(false);
     }
   }, [stopPlayback]);
+
+  const loadAny = useCallback(
+    async (path: string) => {
+      if (!AUDIO_RE.test(path)) {
+        analyze(path);
+        return;
+      }
+      setBusy(true);
+      setError(null);
+      setNotice(null);
+      setGenerated(null);
+      setExported(null);
+      setAnalysis(null);
+      stopPlayback();
+      setAudioProgress({ stage: "准备", percent: 0 });
+      let unlisten: (() => void) | undefined;
+      try {
+        unlisten = await listen<AudioProgress>("audio-progress", (e) =>
+          setAudioProgress(e.payload)
+        );
+        const midPath = await invoke<string>("convert_audio", { path });
+        await analyze(midPath, path);
+        setNotice("已从音频转换为 MIDI（AI 识别结果可能有误差，请试听确认）");
+      } catch (e) {
+        setError(String(e));
+      } finally {
+        unlisten?.();
+        setAudioProgress(null);
+        setBusy(false);
+      }
+    },
+    [analyze, stopPlayback]
+  );
 
   const auditionTrack = useCallback(
     async (index: number) => {
@@ -149,11 +193,13 @@ export default function App() {
     getCurrentWebviewWindow()
       .onDragDropEvent((event) => {
         if (event.payload.type === "drop") {
-          const p = event.payload.paths.find((x) => /\.(mid|midi)$/i.test(x));
+          const p = event.payload.paths.find((x) =>
+            /\.(mid|midi|mp3|wav|flac|ogg|m4a|aac)$/i.test(x)
+          );
           if (p) {
-            analyze(p);
+            loadAny(p);
           } else {
-            setError("请拖入 .mid / .midi 文件");
+            setError("请拖入 .mid / .midi 或 mp3/wav/flac/ogg/m4a 音频文件");
           }
         }
       })
@@ -164,15 +210,19 @@ export default function App() {
     return () => {
       unlisten?.();
     };
-  }, [analyze]);
+  }, [loadAny]);
 
   const openFile = async () => {
     try {
       const p = await open({
         multiple: false,
-        filters: [{ name: "MIDI", extensions: ["mid", "midi"] }],
+        filters: [
+          { name: "MIDI / 音频", extensions: [...MIDI_EXTS, ...AUDIO_EXTS] },
+          { name: "MIDI", extensions: MIDI_EXTS },
+          { name: "音频", extensions: AUDIO_EXTS },
+        ],
       });
-      if (typeof p === "string") analyze(p);
+      if (typeof p === "string") loadAny(p);
     } catch (e) {
       setError(`打开文件对话框失败: ${String(e)}`);
     }
@@ -236,9 +286,9 @@ export default function App() {
           <h1 data-tauri-drag-region>MIDI Buzzer Studio</h1>
         </div>
         <button onClick={openFile} disabled={busy}>
-          打开 MIDI 文件
+          打开 MIDI / 音频
         </button>
-        {filePath && <span className="file-path">{filePath}</span>}
+        {displayPath && <span className="file-path">{displayPath}</span>}
         <div className="spacer" data-tauri-drag-region />
         <button
           className="theme-toggle"
@@ -269,10 +319,26 @@ export default function App() {
       </div>
 
       {error && <div className="banner error">{error}</div>}
+      {audioProgress && (
+        <div className="banner progress">
+          <span className="progress-stage">{audioProgress.stage}</span>
+          <div className="progress-track">
+            <div
+              className="progress-fill"
+              style={{ width: `${Math.round(audioProgress.percent * 100)}%` }}
+            />
+          </div>
+          <span className="progress-pct">
+            {Math.round(audioProgress.percent * 100)}%
+          </span>
+        </div>
+      )}
+      {!audioProgress && notice && <div className="banner info">{notice}</div>}
 
       {!analysis ? (
         <div className="drop-hint">
-          <p>把 .mid / .midi 文件拖进窗口，或点击「打开 MIDI 文件」</p>
+          <p>把 .mid / .midi 或 mp3 / wav / flac / ogg / m4a 文件拖进窗口，或点击「打开 MIDI / 音频」</p>
+          <p className="drop-hint-sub">音频文件会由本地 AI 模型自动识别成 MIDI（首次使用需下载约 230KB 模型）</p>
         </div>
       ) : (
         <main>

@@ -511,6 +511,54 @@ input[type="checkbox"] {
   margin-bottom: 0;
 }
 
+.banner.info {
+  background: var(--info-bg);
+  color: var(--accent-hover);
+  border-color: var(--info-bd);
+}
+
+.banner.progress {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: var(--info-bg);
+  border-color: var(--info-bd);
+  color: var(--text);
+}
+
+.progress-stage {
+  white-space: nowrap;
+  font-weight: 600;
+}
+
+.progress-track {
+  flex: 1;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--accent-soft);
+  overflow: hidden;
+}
+
+.progress-fill {
+  height: 100%;
+  border-radius: 3px;
+  background: var(--accent);
+  transition: width 0.15s ease;
+}
+
+.progress-pct {
+  min-width: 3em;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  color: var(--dim);
+}
+
+.drop-hint-sub {
+  font-size: 12px;
+  opacity: 0.6;
+  margin-top: 6px;
+}
+
 /* ---------- 生成结果浮窗 ---------- */
 
 .modal-overlay {

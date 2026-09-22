@@ -4,3 +4,6 @@ src-tauri/target/
 *.local
 gen-out/
 reference/
+models/
+testdata/
+firmware/*.zip
