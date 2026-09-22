@@ -8,7 +8,7 @@ export default defineConfig({
     port: 1420,
     strictPort: true,
     watch: {
-      ignored: ["**/src-tauri/**", "**/reference/**"],
+      ignored: ["**/src-tauri/**", "**/reference/**", "**/firmware/**", "**/gen-out/**"],
     },
   },
 });
